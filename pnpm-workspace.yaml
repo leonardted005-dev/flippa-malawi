@@ -1,0 +1,14 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# pnpm 10+ blocks dependency lifecycle scripts by default (pnpm 12 uses the
+# `allowBuilds` setting as a map of package name -> boolean). Allow only the
+# build scripts this workspace needs.
+allowBuilds:
+  '@nestjs/core': true
+  '@prisma/client': true
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true
+  unrs-resolver: true

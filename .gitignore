@@ -1,0 +1,48 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# prisma local db
+prisma/*.db
+prisma/*.db-journal
+
+# env (never commit real secrets)
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+logs/
+
+# coverage / test output
+coverage/
+test-results/
+
+# turbo
+.turbo/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Flutter / Dart
+apps/mobile/.dart_tool/
+apps/mobile/build/
+apps/mobile/.flutter-plugins
+apps/mobile/.flutter-plugins-dependencies
+apps/mobile/ios/Pods/
+apps/mobile/android/.gradle/
+apps/mobile/android/local.properties

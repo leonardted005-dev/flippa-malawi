@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    name: Node (install · generate · migrate · typecheck · build · test)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fa
+          POSTGRES_PASSWORD: fa
+          POSTGRES_DB: flippa_africa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fa -d flippa_africa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://fa:fa@localhost:5432/flippa_africa?schema=public
+      SHADOW_DATABASE_URL: postgresql://fa:fa@localhost:5432/flippa_africa_shadow?schema=public
+      DATABASE_URL_TEST: postgresql://fa:fa@localhost:5432/flippa_africa_test?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-access-secret-0123456789
+      JWT_REFRESH_SECRET: ci-refresh-secret-0123456789
+      FIELD_ENCRYPTION_KEY: ci-field-encryption-key-0123456789
+      STORAGE_ENDPOINT: http://localhost:9000
+      STORAGE_BUCKET: ci-bucket
+      STORAGE_ACCESS_KEY_ID: ci-access-key
+      STORAGE_SECRET_ACCESS_KEY: ci-secret-key
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.8.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Create shadow database
+        run: psql "postgresql://fa:fa@localhost:5432/flippa_africa" -c "CREATE DATABASE flippa_africa_shadow;"
+
+      - name: Create e2e test database
+        run: psql "postgresql://fa:fa@localhost:5432/flippa_africa" -c "CREATE DATABASE flippa_africa_test;"
+
+      - name: Prisma generate
+        run: pnpm exec prisma generate
+
+      - name: Apply migrations
+        run: pnpm exec prisma migrate deploy
+
+      - name: Apply migrations to the e2e database
+        run: DATABASE_URL="postgresql://fa:fa@localhost:5432/flippa_africa_test?schema=public" pnpm exec prisma migrate deploy
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      - name: Test
+        run: pnpm test
+
+      - name: E2E tests
+        run: pnpm --filter @fa/api test:e2e
+
+      - name: Migration drift check
+        run: pnpm db:drift
+
+      - name: Secret scan (Gitleaks)
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest detect --source=/repo --no-git --redact --exit-code 1
+
+  mobile:
+    name: Flutter (analyze · test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test

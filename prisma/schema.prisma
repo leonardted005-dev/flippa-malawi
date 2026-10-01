@@ -1,0 +1,472 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Foundational key/value configuration store.
+///
+/// Phase 1 bootstrap only: this model exists to give the project a real,
+/// reviewable first migration. Marketplace business tables (users, assets,
+/// listings, auctions, orders, payments, escrow, ledger, ...) are added in
+/// later phases — see docs/DATABASE_ARCHITECTURE.md.
+model SystemSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@map("system_settings")
+}
+
+// ---------------------------------------------------------------------------
+// IDENTITY
+// ---------------------------------------------------------------------------
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum Role {
+  BUYER
+  SELLER
+  ADMIN
+}
+
+enum VerificationPurpose {
+  EMAIL_VERIFY
+  PASSWORD_RESET
+  PHONE_VERIFY
+}
+
+enum AuditActorType {
+  USER
+  ADMIN
+  SYSTEM
+}
+
+model User {
+  id              String       @id @default(uuid()) @db.Uuid
+  email           String       @unique
+  phone           String?      @unique
+  passwordHash    String       @map("password_hash")
+  status          UserStatus   @default(ACTIVE)
+  roles           Role[]       @default([BUYER])
+  adminRole       String?      @map("admin_role")
+  emailVerifiedAt DateTime?    @map("email_verified_at")
+  phoneVerifiedAt DateTime?    @map("phone_verified_at")
+  locale          String       @default("en")
+  defaultCountry  String?      @map("default_country") @db.Char(2)
+  defaultCurrency String?      @map("default_currency") @db.Char(3)
+  lastLoginAt     DateTime?    @map("last_login_at")
+  version         Int          @default(0)
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+  deletedAt       DateTime?    @map("deleted_at")
+
+  sellerProfile     SellerProfile?
+  buyerProfile      BuyerProfile?
+  refreshTokens     RefreshToken[]
+  verificationTokens VerificationToken[]
+
+  @@index([status])
+  @@map("users")
+}
+
+/// Hashed, rotating refresh tokens. Reuse of a rotated token revokes the whole
+/// family (see IdentityService.refresh).
+model RefreshToken {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  tokenHash     String    @unique @map("token_hash")
+  familyId      String    @map("family_id") @db.Uuid
+  rotatedFromId String?   @map("rotated_from_id") @db.Uuid
+  expiresAt     DateTime  @map("expires_at")
+  revokedAt     DateTime? @map("revoked_at")
+  userAgent     String?   @map("user_agent")
+  ipHash        String?   @map("ip_hash")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+/// Single-use tokens for email verification / password reset / phone verify.
+model VerificationToken {
+  id         String              @id @default(uuid()) @db.Uuid
+  userId     String              @map("user_id") @db.Uuid
+  purpose    VerificationPurpose
+  tokenHash  String              @unique @map("token_hash")
+  expiresAt  DateTime            @map("expires_at")
+  consumedAt DateTime?           @map("consumed_at")
+  createdAt  DateTime            @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@map("verification_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// SELLERS & TIERS
+// ---------------------------------------------------------------------------
+
+enum SellerStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum PayoutAccountStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+/// Tier definitions are CONFIGURATION ROWS, not code constants.
+/// The API resolves limits/fees through these rows (see PlanPolicy in @fa/domain).
+model SellerTier {
+  code               String   @id // FREE_CODER | PRO_CODER | CORPORATE_SELLER
+  name               String
+  storageQuotaBytes  BigInt?  @map("storage_quota_bytes") // null = unlimited
+  maxUploadBytesPerFile BigInt @map("max_upload_bytes_per_file")
+  maxActiveListings  Int?     @map("max_active_listings") // null = unlimited
+  commissionBps      Int      @map("commission_bps") // basis points, 1500 = 15.00%
+  qualityQueue       String   @map("quality_queue") // standard | priority
+  verificationLevel  String   @map("verification_level") // basic | enhanced | enterprise
+  features           Json     @default("{}")
+  effectiveFrom      DateTime @default(now()) @map("effective_from")
+  effectiveTo        DateTime? @map("effective_to")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  sellers SellerProfile[]
+
+  @@map("seller_tiers")
+}
+
+model SellerProfile {
+  id             String       @id @default(uuid()) @db.Uuid
+  userId         String       @unique @map("user_id") @db.Uuid
+  displayName    String       @map("display_name")
+  country        String       @db.Char(2)
+  tierCode       String       @map("tier_code")
+  status         SellerStatus @default(PENDING)
+  ratingCount    Int          @default(0) @map("rating_count")
+  ratingAvgBp    Int          @default(0) @map("rating_avg_bp") // avg rating * 100
+  payoutCurrency String?      @map("payout_currency") @db.Char(3)
+  verifiedAt     DateTime?    @map("verified_at")
+  version        Int          @default(0)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier           SellerTier      @relation(fields: [tierCode], references: [code])
+  payoutAccounts PayoutAccount[]
+  digitalAssets  DigitalAsset[]
+
+  @@index([tierCode])
+  @@index([status])
+  @@map("seller_profiles")
+}
+
+model PayoutAccount {
+  id              String              @id @default(uuid()) @db.Uuid
+  sellerId        String              @map("seller_id") @db.Uuid
+  provider        String
+  accountRefEnc   String              @map("account_ref_enc") // AES-256-GCM ciphertext (never plaintext)
+  accountRefLast4 String?             @map("account_ref_last4")
+  country         String              @db.Char(2)
+  currency        String              @db.Char(3)
+  status          PayoutAccountStatus @default(PENDING)
+  verifiedAt      DateTime?           @map("verified_at")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  seller SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId])
+  @@map("payout_accounts")
+}
+
+model BuyerProfile {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @unique @map("user_id") @db.Uuid
+  defaultCountry  String?  @map("default_country") @db.Char(2)
+  defaultCurrency String?  @map("default_currency") @db.Char(3)
+  kycStatus       String   @default("NONE") @map("kyc_status")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("buyer_profiles")
+}
+
+// ---------------------------------------------------------------------------
+// CROSS-CUTTING (audit + idempotency)
+// ---------------------------------------------------------------------------
+
+/// Append-only compliance trail. Never updated or deleted.
+model AuditLog {
+  id         String         @id @default(uuid()) @db.Uuid
+  actorId    String?        @map("actor_id") @db.Uuid
+  actorType  AuditActorType @map("actor_type")
+  action     String
+  entityType String         @map("entity_type")
+  entityId   String?        @map("entity_id")
+  before     Json?
+  after      Json?
+  ipHash     String?        @map("ip_hash")
+  userAgent  String?        @map("user_agent")
+  requestId  String?        @map("request_id")
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+/// Client retry safety: replaying a request with the same (scope, key) returns
+/// the stored response instead of re-executing the mutation.
+model IdempotencyKey {
+  id           String    @id @default(uuid()) @db.Uuid
+  scope        String
+  key          String
+  requestHash  String    @map("request_hash")
+  statusCode   Int?      @map("status_code")
+  responseJson Json?     @map("response_json")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  expiresAt    DateTime? @map("expires_at")
+
+  @@unique([scope, key])
+  @@map("idempotency_keys")
+}
+
+// ---------------------------------------------------------------------------
+// CATALOG (digital asset abstraction)
+// ---------------------------------------------------------------------------
+
+/// Common asset kinds. ONE `digital_assets` table + typed 1:1 metadata tables —
+/// never an unrelated schema per asset type (see docs/adr/0001).
+enum AssetType {
+  SOFTWARE
+  WEBSITE
+  MOBILE_APP
+  YOUTUBE_CHANNEL
+  INSTAGRAM_PROFILE
+  GAME_ACCOUNT
+  DOMAIN
+  OTHER
+}
+
+/// Lifecycle of the asset RECORD itself (listing lifecycle lives on `listings`).
+enum AssetStatus {
+  DRAFT
+  READY
+  ARCHIVED
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  IN_REVIEW
+  VERIFIED
+  REJECTED
+}
+
+enum QualityStatus {
+  PENDING
+  PASS
+  REVIEW
+  FAIL
+}
+
+model Category {
+  id         String      @id @default(uuid()) @db.Uuid
+  parentId   String?     @map("parent_id") @db.Uuid
+  slug       String      @unique
+  name       String
+  assetTypes AssetType[] @map("asset_types")
+  sort       Int         @default(0)
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+
+  parent   Category?      @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[]     @relation("CategoryTree")
+  assets   DigitalAsset[]
+
+  @@index([parentId])
+  @@map("categories")
+}
+
+model DigitalAsset {
+  id                 String             @id @default(uuid()) @db.Uuid
+  type               AssetType
+  slug               String             @unique
+  title              String
+  summary            String?
+  sellerId           String             @map("seller_id") @db.Uuid
+  country            String             @db.Char(2)
+  currency           String             @db.Char(3)
+  categoryId         String?            @map("category_id") @db.Uuid
+  status             AssetStatus        @default(DRAFT)
+  verificationStatus VerificationStatus @default(UNVERIFIED) @map("verification_status")
+  qualityStatus      QualityStatus      @default(PENDING) @map("quality_status")
+  /// Long-tail, type-specific extras that do not warrant a column (validated per type).
+  extra              Json               @default("{}")
+  version            Int                @default(0)
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+  deletedAt          DateTime?          @map("deleted_at")
+
+  seller    SellerProfile       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  category  Category?           @relation(fields: [categoryId], references: [id])
+  software  SoftwareMetadata?
+  website   WebsiteMetadata?
+  mobile    MobileAppMetadata?
+  youtube   YouTubeMetadata?
+  instagram InstagramMetadata?
+  game      GameAccountMetadata?
+  domain    DomainMetadata?
+
+  @@index([sellerId])
+  @@index([type, status])
+  @@index([categoryId])
+  @@map("digital_assets")
+}
+
+// --- Type-specific metadata (1:1 with digital_assets) ----------------------
+
+model SoftwareMetadata {
+  assetId            String   @id @map("asset_id") @db.Uuid
+  language           String?
+  framework          String?
+  runtime            String?
+  sourceRepo         String?  @map("source_repo")
+  packageSizeBytes   BigInt   @map("package_size_bytes")
+  dependencyCount    Int      @default(0) @map("dependency_count")
+  licenseSpdx        String?  @map("license_spdx")
+  /// Scanner output (Phase 7) — never client-supplied.
+  licenseFindingsJson Json    @default("[]") @map("license_findings_json")
+  securityFindingsJson Json   @default("[]") @map("security_findings_json")
+  qualityScore       Int?     @map("quality_score")
+
+  asset DigitalAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@map("asset_metadata_software")
+}
+
+model WebsiteMetadata {
+  assetId              String   @id @map("asset_id") @db.Uuid
+  domain               String
+  monthlyTraffic       Int?     @map("monthly_traffic")
+  technology           Json     @default("[]")
+  hosting              String?
+  monthlyRevenueMinor  BigInt?  @map("monthly_revenue_minor")
+  revenueCurrency      String?  @map("revenue_currency") @db.Char(3)
+  /// Set by ownership/analytics verification (Phase 8) — never client-supplied.
+  analyticsVerified    Boolean  @default(false) @map("analytics_verified")
+  analyticsProvider    String?  @map("analytics_provider")
+
+  asset DigitalAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@map("asset_metadata_website")
+}
+
+model MobileAppMetadata {
+  assetId              String   @id @map("asset_id") @db.Uuid
+  platforms            Json     @default("[]")
+  bundleId             String?  @map("bundle_id")
+  storeLinks           Json     @default("[]") @map("store_links")
+  installs             Int?
+  monthlyRevenueMinor  BigInt?  @map("monthly_revenue_minor")
+  revenueCurrency      String?  @map("revenue_currency") @db.Char(3)
+  appVersion           String?  @map("app_version")
+
+  asset DigitalAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@map("asset_metadata_mobile")
+}
+
+model YouTubeMetadata {
+  assetId              String   @id @map("asset_id") @db.Uuid
+  channelId            String   @map("channel_id")
+  subscribers          Int?
+  totalViews           BigInt?  @map("total_views")
+  videoCount           Int?     @map("video_count")
+  channelAgeDays       Int?     @map("channel_age_days")
+  monetized            Boolean  @default(false)
+  monthlyRevenueMinor  BigInt?  @map("monthly_revenue_minor")
+  revenueCurrency      String?  @map("revenue_currency") @db.Char(3)
+  /// Retained provider snapshot (Phase 8) — never client-supplied.
+  snapshotId           String?  @map("snapshot_id") @db.Uuid
+
+  asset DigitalAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@map("asset_metadata_youtube")
+}
+
+model InstagramMetadata {
+  assetId         String   @id @map("asset_id") @db.Uuid
+  accountId       String   @map("account_id")
+  followers       Int?
+  engagementBps   Int?     @map("engagement_bps")
+  mediaCount      Int?     @map("media_count")
+  accountAgeDays  Int?     @map("account_age_days")
+  snapshotId      String?  @map("snapshot_id") @db.Uuid
+
+  asset DigitalAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@map("asset_metadata_instagram")
+}
+
+model GameAccountMetadata {
+  assetId      String   @id @map("asset_id") @db.Uuid
+  game         String
+  platform     String
+  accountRef   String   @map("account_ref")
+  levelRank    String?  @map("level_rank")
+  inventory    Json     @default("[]")
+  banState     String   @default("CLEAR") @map("ban_state")
+  transferable Boolean  @default(true)
+
+  asset DigitalAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@map("asset_metadata_game")
+}
+
+model DomainMetadata {
+  assetId        String    @id @map("asset_id") @db.Uuid
+  domainName     String    @map("domain_name")
+  registrar      String?
+  expiresAt      DateTime? @map("expires_at")
+  transferLocked Boolean   @default(false) @map("transfer_locked")
+  dns            Json      @default("[]")
+
+  asset DigitalAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@map("asset_metadata_domain")
+}
+
+/// Retained third-party snapshots (YouTube/Instagram/gaming) for auditability.
+model SocialSnapshot {
+  id         String   @id @default(uuid()) @db.Uuid
+  provider   String
+  subjectRef String   @map("subject_ref")
+  raw        Json
+  sha256     String
+  fetchedAt  DateTime @default(now()) @map("fetched_at")
+
+  @@index([provider, subjectRef])
+  @@map("social_snapshots")
+}
