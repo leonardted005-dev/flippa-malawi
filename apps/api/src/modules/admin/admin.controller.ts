@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch, Query, Req } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Patch, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 
 import { deriveRequestMeta } from '../../common/http/request-meta';
@@ -6,6 +6,8 @@ import { CurrentUser, Roles, type AuthenticatedUser } from '../../common/securit
 import { ZodBody } from '../../common/validation/zod.pipe';
 import { changeTierSchema, type ChangeTierDto } from '../sellers/sellers.dto';
 import { SellersService } from '../sellers/sellers.service';
+import { rejectListingSchema, type RejectListingDto } from '../listings/listings.dto';
+import { ListingsService } from '../listings/listings.service';
 import { AdminService } from './admin.service';
 
 @Controller('admin')
@@ -14,6 +16,7 @@ export class AdminController {
   constructor(
     private readonly admin: AdminService,
     private readonly sellers: SellersService,
+    private readonly listings: ListingsService,
   ) {}
 
   @Get('audit-logs')
@@ -41,5 +44,26 @@ export class AdminController {
     @Req() req: Request,
   ) {
     return this.sellers.changeTier(user.id, sellerId, dto.tierCode, deriveRequestMeta(req));
+  }
+
+  /** Listing review: PENDING_REVIEW -> ACTIVE. */
+  @Patch('listings/:id/approve')
+  approveListing(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Req() req: Request,
+  ) {
+    return this.listings.approve(user.id, id, deriveRequestMeta(req));
+  }
+
+  /** Listing review: PENDING_REVIEW -> DRAFT with a mandatory reason. */
+  @Patch('listings/:id/reject')
+  rejectListing(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @ZodBody(rejectListingSchema) dto: RejectListingDto,
+    @Req() req: Request,
+  ) {
+    return this.listings.reject(user.id, id, dto.reason, deriveRequestMeta(req));
   }
 }

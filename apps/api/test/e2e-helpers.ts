@@ -19,6 +19,9 @@ export const e2eTables = [
   'asset_metadata_instagram',
   'asset_metadata_game',
   'asset_metadata_domain',
+  'listing_attachments',
+  'listings',
+  'storage_objects',
   'digital_assets',
   'categories',
   'social_snapshots',
@@ -117,4 +120,57 @@ export async function createE2ECategory(
     data: { slug: input.slug, name: input.name, assetTypes: input.assetTypes, sort: 1 },
   });
   return category.id;
+}
+
+/** Creates a seller profile for the given bearer token. */
+export async function prepareSeller(server: unknown, token: string): Promise<void> {
+  await createE2ESeller(server, token);
+}
+
+/** Creates an asset and publishes it (status READY). */
+export async function createReadyAsset(
+  server: unknown,
+  token: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const created = await request(server as never)
+    .post('/api/v1/assets')
+    .set('Authorization', `Bearer ${token}`)
+    .send({
+      type: 'SOFTWARE',
+      title: 'E2E test asset',
+      country: 'ZM',
+      currency: 'ZMW',
+      metadata: { packageSizeBytes: 2048, framework: 'NestJS' },
+      ...overrides,
+    })
+    .expect(201);
+
+  const id = (created.body as Record<string, unknown>)['id'] as string;
+  await request(server as never)
+    .post(`/api/v1/assets/${id}/ready`)
+    .set('Authorization', `Bearer ${token}`)
+    .expect(201);
+
+  return id;
+}
+
+/** Registers a user, promotes them to ADMIN out-of-band, then logs in again. */
+export async function registerAdmin(
+  server: unknown,
+  prisma: PrismaClient,
+  email: string,
+): Promise<E2EBearer> {
+  const registered = await registerE2EUser(server, { email });
+  await prisma.user.update({
+    where: { email },
+    data: { roles: { push: 'ADMIN' } },
+  });
+
+  const login = await request(server as never)
+    .post('/api/v1/auth/login')
+    .send({ email, password: 'correct-horse-battery-staple-2' })
+    .expect(200);
+
+  return bearerFromAuthBody(login.body as Record<string, unknown>);
 }

@@ -5,6 +5,7 @@ export * from './ports';
 export * from './assets/types';
 export * from './assets/schemas';
 export * from './assets/registry';
+export * from './listings/listing-machine';
 
 /**
  * Bumped when foundational domain primitives change incompatibly.

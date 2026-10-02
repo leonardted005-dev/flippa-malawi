@@ -8,10 +8,13 @@ import { HealthModule } from './common/health/health.module';
 import { RequestIdMiddleware } from './common/observability/request-id.middleware';
 import { JwtAuthGuard, RolesGuard } from './common/security/guards';
 import { PrismaModule } from './integrations/prisma/prisma.module';
+import { StorageModule } from './integrations/storage/storage.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { IdentityModule } from './modules/identity/identity.module';
+import { ListingsModule } from './modules/listings/listings.module';
 import { SellersModule } from './modules/sellers/sellers.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 
 /**
  * Root module (modular monolith). Cross-cutting concerns are registered as
@@ -21,11 +24,14 @@ import { SellersModule } from './modules/sellers/sellers.module';
   imports: [
     AppConfigModule,
     PrismaModule,
+    StorageModule,
     CommonModule,
     HealthModule,
     IdentityModule,
     SellersModule,
     CatalogModule,
+    ListingsModule,
+    UploadsModule,
     AdminModule,
   ],
   providers: [

@@ -9,6 +9,6 @@ import { CatalogService } from './catalog.service';
   imports: [SellersModule],
   controllers: [AssetTypesController, CategoriesController, AssetsController],
   providers: [CatalogService, AssetRepository, CategoryRepository],
-  exports: [CatalogService],
+  exports: [CatalogService, AssetRepository, CategoryRepository],
 })
 export class CatalogModule {}

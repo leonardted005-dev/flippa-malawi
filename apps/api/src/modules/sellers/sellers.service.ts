@@ -1,6 +1,11 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, type SellerProfile, type SellerTier } from '@prisma/client';
-import { resolvePlanPolicy, type PlanPolicy, type TierConfig } from '@fa/domain';
+import { isUploadAllowed, resolvePlanPolicy, type PlanPolicy, type TierConfig } from '@fa/domain';
 
 import { AuditService } from '../../common/audit/audit.service';
 import type { RequestMeta } from '../../common/http/request-meta';
@@ -173,6 +178,19 @@ export class SellersService {
   async getPolicyForUser(userId: string): Promise<PolicyResponse> {
     const seller = await this.requireSeller(userId);
     return serializePolicy(await this.resolveTier(seller.tierCode));
+  }
+
+  /** Server-side quota gate for uploads (per seller tier). */
+  async assertUploadWithinQuota(userId: string, sizeBytes: number): Promise<PlanPolicy> {
+    const seller = await this.requireSeller(userId);
+    const policy = await this.resolveTier(seller.tierCode);
+    if (!isUploadAllowed(policy, BigInt(sizeBytes))) {
+      throw new BadRequestException({
+        code: 'UPLOAD_QUOTA_EXCEEDED',
+        message: `Upload exceeds the ${policy.code} tier limit of ${policy.maxUploadBytesPerFile.toString()} bytes`,
+      });
+    }
+    return policy;
   }
 
   async listTierPolicies(): Promise<PolicyResponse[]> {

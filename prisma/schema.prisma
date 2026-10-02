@@ -172,6 +172,7 @@ model SellerProfile {
   tier           SellerTier      @relation(fields: [tierCode], references: [code])
   payoutAccounts PayoutAccount[]
   digitalAssets  DigitalAsset[]
+  listings       Listing[]
 
   @@index([tierCode])
   @@index([status])
@@ -254,6 +255,109 @@ model IdempotencyKey {
 }
 
 // ---------------------------------------------------------------------------
+// MARKETPLACE LISTINGS (fixed-price / classified)
+// ---------------------------------------------------------------------------
+
+enum ListingMode {
+  FIXED_PRICE
+  AUCTION
+}
+
+enum ListingStatus {
+  DRAFT
+  PENDING_REVIEW
+  ACTIVE
+  SOLD
+  PAUSED
+  EXPIRED
+  WITHDRAWN
+}
+
+model Listing {
+  id             String        @id @default(uuid()) @db.Uuid
+  assetId        String        @map("asset_id") @db.Uuid
+  sellerId       String        @map("seller_id") @db.Uuid
+  mode           ListingMode   @default(FIXED_PRICE)
+  status         ListingStatus @default(DRAFT)
+  priceMinor     BigInt?       @map("price_minor")
+  currency       String?       @db.Char(3)
+  startsAt       DateTime?     @map("starts_at")
+  endsAt         DateTime?     @map("ends_at")
+  publishedAt    DateTime?     @map("published_at")
+  featuredUntil  DateTime?     @map("featured_until")
+  rejectionReason String?      @map("rejection_reason")
+  version        Int           @default(0)
+  idempotencyKey String?       @map("idempotency_key")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  asset       DigitalAsset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  seller      SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  attachments ListingAttachment[]
+
+  @@index([sellerId])
+  @@index([assetId])
+  @@index([status, endsAt])
+  @@map("listings")
+}
+
+enum StorageObjectVisibility {
+  PRIVATE
+  REVIEW
+  DOWNLOADS
+}
+
+enum StorageObjectScanStatus {
+  PENDING
+  CLEAN
+  QUARANTINED
+  ERROR
+}
+
+model StorageObject {
+  id             String                  @id @default(uuid()) @db.Uuid
+  bucket         String
+  key            String
+  ownerType      String                  @map("owner_type")
+  ownerId        String                  @map("owner_id") @db.Uuid
+  contentType    String                  @map("content_type")
+  sizeBytes      BigInt                  @map("size_bytes")
+  sha256         String?
+  contentSha256  String?                 @map("content_sha256")
+  visibility     StorageObjectVisibility @default(PRIVATE)
+  scanStatus     StorageObjectScanStatus @default(PENDING) @map("scan_status")
+  width          Int?
+  height         Int?
+  imageFormat    String?                 @map("image_format")
+  retentionUntil DateTime?               @map("retention_until")
+  createdAt      DateTime                @default(now()) @map("created_at")
+  deletedAt      DateTime?               @map("deleted_at")
+
+  listingAttachments ListingAttachment[]
+
+  @@unique([bucket, key])
+  @@index([ownerType, ownerId])
+  @@index([scanStatus])
+  @@map("storage_objects")
+}
+
+model ListingAttachment {
+  id              String        @id @default(uuid()) @db.Uuid
+  listingId       String        @map("listing_id") @db.Uuid
+  storageObjectId String        @map("storage_object_id") @db.Uuid
+  sort            Int           @default(0)
+  caption         String?
+  hero            Boolean       @default(false)
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  listing       Listing       @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  storageObject StorageObject @relation(fields: [storageObjectId], references: [id], onDelete: Restrict)
+
+  @@unique([listingId, storageObjectId])
+  @@map("listing_attachments")
+}
+
+// ---------------------------------------------------------------------------
 // CATALOG (digital asset abstraction)
 // ---------------------------------------------------------------------------
 
@@ -331,6 +435,7 @@ model DigitalAsset {
 
   seller    SellerProfile       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
   category  Category?           @relation(fields: [categoryId], references: [id])
+  listings  Listing[]
   software  SoftwareMetadata?
   website   WebsiteMetadata?
   mobile    MobileAppMetadata?

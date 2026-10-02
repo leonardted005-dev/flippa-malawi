@@ -54,6 +54,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
+      - name: Start MinIO and create the e2e bucket
+        run: |
+          docker run -d --name minio -p 9000:9000 -p 9001:9001 \
+            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:latest server /data --console-address ":9001"
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:9000/minio/health/live && break || sleep 2
+          done
+          docker run --rm --network host --entrypoint /bin/sh minio/mc -c \
+            'mc alias set local http://127.0.0.1:9000 minioadmin minioadmin >/dev/null && mc mb --ignore-existing local/fa-e2e && mc anonymous set none local/fa-e2e'
+
       - name: Create shadow database
         run: psql "postgresql://fa:fa@localhost:5432/flippa_africa" -c "CREATE DATABASE flippa_africa_shadow;"
 
