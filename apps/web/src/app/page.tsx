@@ -16,6 +16,18 @@ export default function HomePage() {
       </header>
 
       <section className="fa-card" style={{ marginTop: 24 }}>
+        <h2 style={{ marginTop: 0, fontSize: 16 }}>Marketplace</h2>
+        <p style={{ marginTop: 0 }}>
+          <a href="/browse" style={{ color: 'var(--fa-color-accent)', fontWeight: 600 }}>
+            Browse active digital-asset listings →
+          </a>
+        </p>
+        <p className="fa-muted" style={{ margin: 0, fontSize: 13 }}>
+          Server-side filtering, sorting and cursor pagination over verified listing metadata.
+        </p>
+      </section>
+
+      <section className="fa-card" style={{ marginTop: 24 }}>
         <h2 style={{ marginTop: 0, fontSize: 16 }}>Foundation status</h2>
         <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
           <li>Monorepo: pnpm workspaces + Turborepo</li>

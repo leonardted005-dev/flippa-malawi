@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  Query,
   type ArgumentMetadata,
   type PipeTransform,
 } from '@nestjs/common';
@@ -41,3 +42,21 @@ export function createZodBodyDecorator(schema: ZodSchema): ParameterDecorator {
 }
 
 export const ZodBody = createZodBodyDecorator;
+
+/**
+ * Sugar for query objects: `@ZodQuery(schema) query: DiscoveryQueryDto`.
+ * Express hands the entire query-string object to Nest's `Query()` when no
+ * parameter name is given, so the schema sees `{}` for an empty query string
+ * and relies on its own defaults.
+ */
+export function createZodQueryDecorator(schema: ZodSchema): ParameterDecorator {
+  return (
+    target: object,
+    propertyKey: string | symbol | undefined,
+    parameterIndex: number,
+  ): void => {
+    Query(new ZodValidationPipe(schema))(target, propertyKey, parameterIndex);
+  };
+}
+
+export const ZodQuery = createZodQueryDecorator;

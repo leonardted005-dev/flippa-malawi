@@ -298,6 +298,10 @@ model Listing {
   @@index([sellerId])
   @@index([assetId])
   @@index([status, endsAt])
+  @@index([status, publishedAt])
+  @@index([status, createdAt])
+  @@index([status, priceMinor])
+  @@index([status, featuredUntil])
   @@map("listings")
 }
 
@@ -447,6 +451,8 @@ model DigitalAsset {
   @@index([sellerId])
   @@index([type, status])
   @@index([categoryId])
+  @@index([country])
+  @@index([verificationStatus, qualityStatus])
   @@map("digital_assets")
 }
 

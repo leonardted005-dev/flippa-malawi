@@ -11,6 +11,7 @@ import { PrismaModule } from './integrations/prisma/prisma.module';
 import { StorageModule } from './integrations/storage/storage.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
+import { DiscoveryModule } from './modules/discovery/discovery.module';
 import { IdentityModule } from './modules/identity/identity.module';
 import { ListingsModule } from './modules/listings/listings.module';
 import { SellersModule } from './modules/sellers/sellers.module';
@@ -31,6 +32,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     SellersModule,
     CatalogModule,
     ListingsModule,
+    DiscoveryModule,
     UploadsModule,
     AdminModule,
   ],

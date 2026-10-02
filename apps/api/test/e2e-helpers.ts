@@ -174,3 +174,34 @@ export async function registerAdmin(
 
   return bearerFromAuthBody(login.body as Record<string, unknown>);
 }
+
+/**
+ * Creates a listing for an asset, submits it, and has an admin approve it —
+ * i.e. drives it to ACTIVE so it appears in public discovery.
+ */
+export async function publishListing(
+  server: unknown,
+  sellerToken: string,
+  adminToken: string,
+  assetId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const created = await request(server as never)
+    .post('/api/v1/listings')
+    .set('Authorization', `Bearer ${sellerToken}`)
+    .send({ assetId, priceMinor: 100_000, currency: 'ZMW', ...overrides })
+    .expect(201);
+  const listingId = (created.body as Record<string, unknown>)['id'] as string;
+
+  await request(server as never)
+    .post(`/api/v1/listings/${listingId}/submit`)
+    .set('Authorization', `Bearer ${sellerToken}`)
+    .expect(201);
+
+  await request(server as never)
+    .patch(`/api/v1/admin/listings/${listingId}/approve`)
+    .set('Authorization', `Bearer ${adminToken}`)
+    .expect(200);
+
+  return listingId;
+}
