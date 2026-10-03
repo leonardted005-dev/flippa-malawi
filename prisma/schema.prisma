@@ -73,6 +73,9 @@ model User {
   buyerProfile      BuyerProfile?
   refreshTokens     RefreshToken[]
   verificationTokens VerificationToken[]
+  bids              Bid[]
+  offers            Offer[]
+  watchlists        Watchlist[]
 
   @@index([status])
   @@map("users")
@@ -255,6 +258,132 @@ model IdempotencyKey {
 }
 
 // ---------------------------------------------------------------------------
+// AUCTIONS · BIDS · OFFERS · WATCHLISTS
+// ---------------------------------------------------------------------------
+
+enum AuctionStatus {
+  LIVE
+  CLOSED
+  RESERVE_MET
+  RESERVE_NOT_MET
+  COMPLETED
+  CANCELLED
+}
+
+enum BidStatus {
+  PLACED
+  WON
+  OUTBID
+  WITHDRAWN
+  INVALID
+}
+
+enum OfferStatus {
+  PLACED
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  WITHDRAWN
+}
+
+/// Derived from an AUCTION-mode listing when it is approved (made ACTIVE).
+/// Row-level locking (`SELECT ... FOR UPDATE`) serialises concurrent bids.
+model Auction {
+  id               String        @id @default(uuid()) @db.Uuid
+  listingId        String        @unique @map("listing_id") @db.Uuid
+  status           AuctionStatus @default(LIVE)
+  /// Plain scalar (not a relation) to avoid a circular FK with Bid.
+  currentBidId     String?       @map("current_bid_id") @db.Uuid
+  currentBidMinor  BigInt?       @map("current_bid_minor")
+  reserveMinor     BigInt?       @map("reserve_minor")
+  bidCount         Int           @default(0) @map("bid_count")
+  endsAt           DateTime      @map("ends_at")
+  winnerBuyerId    String?       @map("winner_buyer_id") @db.Uuid
+  openedAt         DateTime      @default(now()) @map("opened_at")
+  closedAt         DateTime?     @map("closed_at")
+  lastBidAt        DateTime?     @map("last_bid_at")
+  version          Int           @default(0)
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  bids    Bid[]
+
+  @@index([status, endsAt])
+  @@map("auctions")
+}
+
+model Bid {
+  id             String    @id @default(uuid()) @db.Uuid
+  auctionId      String    @map("auction_id") @db.Uuid
+  bidderId       String    @map("bidder_id") @db.Uuid
+  amountMinor    BigInt    @map("amount_minor")
+  currency       String    @db.Char(3)
+  status         BidStatus @default(PLACED)
+  placedAt       DateTime  @default(now()) @map("placed_at")
+  ipHash         String?   @map("ip_hash")
+  idempotencyKey String?   @map("idempotency_key")
+
+  auction Auction @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+  bidder  User    @relation(fields: [bidderId], references: [id], onDelete: Cascade)
+
+  @@unique([auctionId, idempotencyKey])
+  @@index([auctionId, placedAt])
+  @@map("bids")
+}
+
+model Offer {
+  id             String      @id @default(uuid()) @db.Uuid
+  listingId      String      @map("listing_id") @db.Uuid
+  buyerId        String      @map("buyer_id") @db.Uuid
+  amountMinor    BigInt      @map("amount_minor")
+  currency       String      @db.Char(3)
+  status         OfferStatus @default(PLACED)
+  expiresAt      DateTime?   @map("expires_at")
+  decisionReason String?     @map("decision_reason")
+  idempotencyKey String?     @map("idempotency_key")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyer   User    @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@unique([listingId, idempotencyKey])
+  @@index([listingId, status])
+  @@index([buyerId, status])
+  @@map("offers")
+}
+
+model Watchlist {
+  id        String   @id @default(uuid()) @db.Uuid
+  buyerId   String   @map("buyer_id") @db.Uuid
+  name      String
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  buyer User             @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  items WatchlistItem[]
+
+  @@unique([buyerId, name])
+  @@index([buyerId])
+  @@map("watchlists")
+}
+
+model WatchlistItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  watchlistId String   @map("watchlist_id") @db.Uuid
+  assetId     String   @map("asset_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  watchlist Watchlist    @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+  asset     DigitalAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([watchlistId, assetId])
+  @@map("watchlist_items")
+}
+
+// ---------------------------------------------------------------------------
 // MARKETPLACE LISTINGS (fixed-price / classified)
 // ---------------------------------------------------------------------------
 
@@ -294,6 +423,8 @@ model Listing {
   asset       DigitalAsset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
   seller      SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Cascade)
   attachments ListingAttachment[]
+  auction     Auction?
+  offers      Offer[]
 
   @@index([sellerId])
   @@index([assetId])
@@ -447,6 +578,7 @@ model DigitalAsset {
   instagram InstagramMetadata?
   game      GameAccountMetadata?
   domain    DomainMetadata?
+  watchlistItems WatchlistItem[]
 
   @@index([sellerId])
   @@index([type, status])

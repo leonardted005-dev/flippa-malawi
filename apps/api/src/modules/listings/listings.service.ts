@@ -10,6 +10,7 @@ import { assertListingTransition, ListingTransitionError } from '@fa/domain';
 import { AuditService } from '../../common/audit/audit.service';
 import type { RequestMeta } from '../../common/http/request-meta';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
+import { AuctionRepository } from '../auctions/auctions.repository';
 import { AssetRepository } from '../catalog/catalog.repository';
 import { SellerRepository } from '../sellers/sellers.repository';
 import { StorageObjectRepository } from '../uploads/uploads.repository';
@@ -28,6 +29,7 @@ export class ListingsService {
     private readonly assets: AssetRepository,
     private readonly objects: StorageObjectRepository,
     private readonly sellers: SellerRepository,
+    private readonly auctionRepo: AuctionRepository,
     private readonly audit: AuditService,
     private readonly idempotency: IdempotencyService,
   ) {}
@@ -241,7 +243,7 @@ export class ListingsService {
   /** Admin: PENDING_REVIEW -> ACTIVE (publication). */
   async approve(actorId: string, listingId: string, meta: RequestMeta) {
     const listing = await this.requireListing(listingId);
-    return this.performTransition(
+    const result = await this.performTransition(
       actorId,
       listing,
       'ACTIVE',
@@ -250,6 +252,22 @@ export class ListingsService {
       { publishedAt: new Date() },
       'ADMIN',
     );
+
+    // Going live on an auction listing opens the auction for bidding.
+    if (listing.mode === 'AUCTION') {
+      if (!listing.endsAt) {
+        throw new BadRequestException({
+          code: 'LISTING_END_REQUIRED',
+          message: 'An auction listing requires endsAt before it can go live',
+        });
+      }
+      await this.auctionRepo.createForListing(listing.id, {
+        endsAt: listing.endsAt,
+        reserveMinor: listing.priceMinor ?? null,
+      });
+    }
+
+    return result;
   }
 
   /** Admin: PENDING_REVIEW -> DRAFT with a reason (never silent). */
@@ -308,6 +326,20 @@ export class ListingsService {
         });
       }
       throw error;
+    }
+
+    // A live auction that already has bids cannot be pulled or paused.
+    if (listing.mode === 'AUCTION' && (to === 'WITHDRAWN' || to === 'PAUSED')) {
+      const auction = await this.auctionRepo.findByListingId(listing.id);
+      if (auction && auction.status === 'LIVE' && auction.bidCount > 0) {
+        throw new ConflictException({
+          code: 'AUCTION_HAS_BIDS',
+          message: 'This auction already has bids and can no longer be pulled or paused',
+        });
+      }
+      if (to === 'WITHDRAWN' && auction && auction.status === 'LIVE') {
+        await this.auctionRepo.cancel(auction.id);
+      }
     }
 
     const updated = await this.listings.transition(listing.id, from, to, (data ?? {}) as never);

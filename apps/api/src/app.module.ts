@@ -10,12 +10,15 @@ import { JwtAuthGuard, RolesGuard } from './common/security/guards';
 import { PrismaModule } from './integrations/prisma/prisma.module';
 import { StorageModule } from './integrations/storage/storage.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { AuctionsModule } from './modules/auctions/auctions.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { DiscoveryModule } from './modules/discovery/discovery.module';
 import { IdentityModule } from './modules/identity/identity.module';
 import { ListingsModule } from './modules/listings/listings.module';
+import { OffersModule } from './modules/offers/offers.module';
 import { SellersModule } from './modules/sellers/sellers.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
+import { WatchlistsModule } from './modules/watchlists/watchlists.module';
 
 /**
  * Root module (modular monolith). Cross-cutting concerns are registered as
@@ -33,6 +36,9 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     CatalogModule,
     ListingsModule,
     DiscoveryModule,
+    AuctionsModule,
+    OffersModule,
+    WatchlistsModule,
     UploadsModule,
     AdminModule,
   ],

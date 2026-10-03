@@ -6,6 +6,7 @@ export * from './assets/types';
 export * from './assets/schemas';
 export * from './assets/registry';
 export * from './listings/listing-machine';
+export * from './auctions/bid-rules';
 
 /**
  * Bumped when foundational domain primitives change incompatibly.

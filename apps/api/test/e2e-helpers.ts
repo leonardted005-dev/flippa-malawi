@@ -12,6 +12,11 @@ import { AppModule } from '../src/app.module';
 export const e2eTables = [
   'idempotency_keys',
   'audit_logs',
+  'bids',
+  'offers',
+  'auctions',
+  'watchlist_items',
+  'watchlists',
   'asset_metadata_software',
   'asset_metadata_website',
   'asset_metadata_mobile',
@@ -153,6 +158,41 @@ export async function createReadyAsset(
     .expect(201);
 
   return id;
+}
+
+/**
+ * Opens an AUCTION-mode listing: create (with endsAt) -> submit -> admin approve.
+ * Returns the derived auction id once the listing is ACTIVE.
+ */
+export async function publishAuction(
+  server: unknown,
+  sellerToken: string,
+  adminToken: string,
+  assetId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<{ listingId: string; auctionId: string }> {
+  const endsAt = overrides['endsAt'] ?? new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const listingId = await publishListing(server, sellerToken, adminToken, assetId, {
+    mode: 'AUCTION',
+    endsAt,
+    priceMinor: overrides['priceMinor'] ?? 50_000,
+    ...overrides,
+  });
+
+  // Approving an AUCTION listing materialises the auction; the seller's own
+  // listing view exposes it.
+  const listing = await request(server as never)
+    .get(`/api/v1/listings/${listingId}`)
+    .set('Authorization', `Bearer ${sellerToken}`)
+    .expect(200);
+
+  const auction = (listing.body as Record<string, unknown>)['auction'] as
+    { id?: string } | null | undefined;
+
+  if (!auction?.id) {
+    throw new Error('Auction was not materialised for the approved auction listing');
+  }
+  return { listingId, auctionId: auction.id };
 }
 
 /** Registers a user, promotes them to ADMIN out-of-band, then logs in again. */

@@ -34,6 +34,16 @@ export const LISTING_INCLUDE = {
       },
     },
   },
+  auction: {
+    select: {
+      id: true,
+      status: true,
+      endsAt: true,
+      currentBidMinor: true,
+      reserveMinor: true,
+      bidCount: true,
+    },
+  },
 } as const;
 
 export type ListingWithRelations = Prisma.ListingGetPayload<{ include: typeof LISTING_INCLUDE }>;
