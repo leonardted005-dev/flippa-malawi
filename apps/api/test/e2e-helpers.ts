@@ -4,6 +4,8 @@ import { PrismaClient, type AssetType } from '@prisma/client';
 import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
+import { DNS_EVIDENCE_READER, HTTP_EVIDENCE_READER } from '../src/common/tokens';
+import { StubEvidenceReaders } from '../src/integrations/evidence/stub-evidence-readers';
 
 /**
  * Tables truncated between e2e tests. `CASCADE` handles dependants, but keeping
@@ -12,6 +14,9 @@ import { AppModule } from '../src/app.module';
 export const e2eTables = [
   'idempotency_keys',
   'audit_logs',
+  'kyc_answers',
+  'ownership_challenges',
+  'verification_cases',
   'quality_reports',
   'security_findings',
   'scanner_runs',
@@ -55,16 +60,37 @@ export interface E2EBearer {
   refreshToken: string;
 }
 
-export async function bootE2EApp(): Promise<{ app: INestApplication; prisma: PrismaClient }> {
+export interface BootE2EOptions {
+  /**
+   * When provided, the live DNS/HTTP evidence readers are replaced with this
+   * deterministic stub — verification tests publish fake TXT/well-known data
+   * without touching real DNS or the internet.
+   */
+  evidence?: StubEvidenceReaders;
+}
+
+export async function bootE2EApp(options: BootE2EOptions = {}): Promise<{
+  app: INestApplication;
+  prisma: PrismaClient;
+  evidence?: StubEvidenceReaders;
+}> {
   const prisma = new PrismaClient();
   await truncateE2E(prisma);
 
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  const builder = Test.createTestingModule({ imports: [AppModule] });
+  if (options.evidence) {
+    builder
+      .overrideProvider(DNS_EVIDENCE_READER)
+      .useValue(options.evidence)
+      .overrideProvider(HTTP_EVIDENCE_READER)
+      .useValue(options.evidence);
+  }
+  const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication();
   app.setGlobalPrefix('api/v1');
   await app.init();
 
-  return { app, prisma };
+  return { app, prisma, evidence: options.evidence };
 }
 
 export async function registerE2EUser(

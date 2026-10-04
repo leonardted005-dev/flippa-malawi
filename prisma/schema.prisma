@@ -176,6 +176,7 @@ model SellerProfile {
   payoutAccounts PayoutAccount[]
   digitalAssets  DigitalAsset[]
   listings       Listing[]
+  cases          VerificationCase[]
 
   @@index([tierCode])
   @@index([status])
@@ -614,6 +615,121 @@ model QualityReport {
 
 /// Common asset kinds. ONE `digital_assets` table + typed 1:1 metadata tables —
 /// never an unrelated schema per asset type (see docs/adr/0001).
+// ---------------------------------------------------------------------------
+// VERIFICATION (Phase 8)
+//
+// VerificationCase is the workflow aggregate. The derived projection
+// DigitalAsset.verificationStatus is updated ONLY by this module — never by
+// clients. KYC answers reuse the same aggregate (targetType SELLER) so the
+// admin queue, audit trail, and expiry semantics stay uniform.
+// ---------------------------------------------------------------------------
+
+enum VerificationTargetType {
+  ASSET
+  SELLER
+}
+
+enum VerificationCaseStatus {
+  OPEN
+  SUBMITTED
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum VerificationMethod {
+  DNS_TXT
+  HTTP_TOKEN
+  SOCIAL_PROOF
+  STORE_PROOF
+  MANUAL
+}
+
+enum KycLevel {
+  BASIC
+  ENHANCED
+  ENTERPRISE
+}
+
+/// One workflow per asset-or-seller verification. Only one OPEN/SUBMITTED
+/// case may exist per asset (partial-unique index) to prevent queue spam.
+model VerificationCase {
+  id           String                  @id @default(uuid()) @db.Uuid
+  targetType   VerificationTargetType  @map("target_type")
+  assetId      String?                 @map("asset_id") @db.Uuid
+  sellerId     String?                 @map("seller_id") @db.Uuid
+  method       VerificationMethod
+  /// Tier-appropriate KYC bar for SELLER cases; null for ASSET cases.
+  kycLevel     KycLevel?               @map("kyc_level")
+  status       VerificationCaseStatus  @default(OPEN)
+  /// Active DNS/HTTP challenge still awaiting proof (null once consumed).
+  challengeId  String?                 @map("challenge_id") @db.Uuid
+  attempts     Int                     @default(0)
+  decidedById  String?                 @map("decided_by_id") @db.Uuid
+  decidedAt    DateTime?               @map("decided_at")
+  decisionNote String?                 @map("decision_note")
+  expiresAt    DateTime                @map("expires_at")
+  version      Int                     @default(0)
+  createdAt    DateTime                @default(now()) @map("created_at")
+  updatedAt    DateTime                @updatedAt @map("updated_at")
+
+  asset      DigitalAsset?  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  seller     SellerProfile? @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  challenge  OwnershipChallenge? @relation("CaseChallenge", fields: [challengeId], references: [id], onDelete: SetNull)
+  challenges OwnershipChallenge[] @relation("ChallengeCase")
+  kycAnswers KycAnswer[]
+
+  /// Exactly one target must be set (enforced in service + CHECK below).
+  @@index([assetId, status])
+  @@index([sellerId, status])
+  @@index([status, expiresAt])
+  @@index([challengeId])
+  @@map("verification_cases")
+}
+
+/// Server-issued ownership challenge. The TOKEN is the secret — only its
+/// sha256 is stored; the plaintext is shown to the seller exactly once at
+/// issuance. Checks run server-side against live DNS/HTTP, never client claims.
+model OwnershipChallenge {
+  id          String             @id @default(uuid()) @db.Uuid
+  caseId      String             @map("case_id") @db.Uuid
+  method      VerificationMethod
+  /// DNS label (TXT record name) or HTTP path — server-derived, not client input.
+  target      String
+  tokenHash   String             @map("token_hash")
+  attempts    Int                @default(0)
+  verifiedAt  DateTime?          @map("verified_at")
+  expiresAt   DateTime           @map("expires_at")
+  createdAt   DateTime           @default(now()) @map("created_at")
+
+  caseRecord VerificationCase @relation("ChallengeCase", fields: [caseId], references: [id], onDelete: Cascade)
+  activeFor  VerificationCase[] @relation("CaseChallenge")
+
+  @@index([caseId])
+  @@index([expiresAt])
+  @@map("ownership_challenges")
+}
+
+/// Structured KYC answers attached to a SELLER VerificationCase. Document
+/// IMAGES stay in private object storage — only the object id is referenced
+/// here; the ciphertext holds PII and is AES-256-GCM encrypted.
+model KycAnswer {
+  id              String   @id @default(uuid()) @db.Uuid
+  caseId          String   @map("case_id") @db.Uuid
+  question        String
+  /// Encrypted answer payload (FieldCipher). Last-4 style hints stay in `hint`.
+  answerEnc       String   @map("answer_enc")
+  hint            String?
+  /// Private StorageObject id for document uploads (never a public URL).
+  evidenceObjectId String? @map("evidence_object_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  caseRecord VerificationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@map("kyc_answers")
+}
+
 enum AssetType {
   SOFTWARE
   WEBSITE
@@ -687,6 +803,7 @@ model DigitalAsset {
   seller    SellerProfile       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
   category  Category?           @relation(fields: [categoryId], references: [id])
   listings  Listing[]
+  cases     VerificationCase[]
   software  SoftwareMetadata?
   website   WebsiteMetadata?
   mobile    MobileAppMetadata?

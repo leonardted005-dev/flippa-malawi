@@ -19,6 +19,7 @@ import { OffersModule } from './modules/offers/offers.module';
 import { QualityModule } from './modules/quality/quality.module';
 import { SellersModule } from './modules/sellers/sellers.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
+import { VerificationModule } from './modules/verification/verification.module';
 import { WatchlistsModule } from './modules/watchlists/watchlists.module';
 
 /**
@@ -42,6 +43,7 @@ import { WatchlistsModule } from './modules/watchlists/watchlists.module';
     WatchlistsModule,
     UploadsModule,
     QualityModule,
+    VerificationModule,
     AdminModule,
   ],
   providers: [

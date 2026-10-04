@@ -10,6 +10,8 @@ export * from './auctions/bid-rules';
 export * from './quality/security-finding';
 export * from './quality/quality-policy';
 export * from './quality/scanner';
+export * from './verification/verification-machine';
+export * from './verification/evidence';
 
 /**
  * Bumped when foundational domain primitives change incompatibly.
