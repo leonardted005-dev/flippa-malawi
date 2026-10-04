@@ -7,6 +7,9 @@ export * from './assets/schemas';
 export * from './assets/registry';
 export * from './listings/listing-machine';
 export * from './auctions/bid-rules';
+export * from './quality/security-finding';
+export * from './quality/quality-policy';
+export * from './quality/scanner';
 
 /**
  * Bumped when foundational domain primitives change incompatibly.

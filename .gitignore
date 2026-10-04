@@ -9,6 +9,9 @@ build/
 out/
 *.tsbuildinfo
 
+# downloaded external scanner binaries (scripts/fetch-scanners.mjs)
+tools/
+
 # prisma local db
 prisma/*.db
 prisma/*.db-journal

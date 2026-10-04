@@ -6,6 +6,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import type { AppEnv } from '@fa/config';
 import type {
@@ -66,6 +67,18 @@ export class S3ObjectStorage implements ObjectStorage {
       { expiresIn },
     );
     return { url, expiresAt: new Date(Date.now() + expiresIn * 1000) };
+  }
+
+  async putObject(
+    key: string,
+    body: Buffer,
+    contentType: string,
+  ): Promise<{ key: string; bytes: number; sha256: string }> {
+    const sha256 = createHash('sha256').update(body).digest('hex');
+    await this.client.send(
+      new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType }),
+    );
+    return { key, bytes: body.byteLength, sha256 };
   }
 
   async inspect(key: string): Promise<ObjectInspection | null> {

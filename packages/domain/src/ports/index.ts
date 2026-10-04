@@ -56,6 +56,12 @@ export interface ObjectInspection {
 export interface ObjectStorage {
   createSignedUploadUrl(key: string, options: SignedUploadOptions): Promise<SignedUpload>;
   createSignedDownloadUrl(key: string, expiresIn: number): Promise<SignedDownload>;
+  /** Server-side artifact write (scan reports, SBOMs). Returns the sha256. */
+  putObject(
+    key: string,
+    body: Buffer,
+    contentType: string,
+  ): Promise<{ key: string; bytes: number; sha256: string }>;
   /** Server-side inspection (HEAD + bounded probe) after an upload completes. */
   inspect(key: string): Promise<ObjectInspection | null>;
   delete(key: string): Promise<void>;

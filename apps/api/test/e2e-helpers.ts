@@ -12,6 +12,10 @@ import { AppModule } from '../src/app.module';
 export const e2eTables = [
   'idempotency_keys',
   'audit_logs',
+  'quality_reports',
+  'security_findings',
+  'scanner_runs',
+  'quality_policies',
   'bids',
   'offers',
   'auctions',
@@ -100,6 +104,25 @@ export async function ensureFreeTier(prisma: PrismaClient): Promise<void> {
       qualityQueue: 'standard',
       verificationLevel: 'basic',
       features: {},
+    },
+  });
+}
+
+/** The active quality policy is configuration (Phase 7) — re-seeded each test. */
+export async function ensureQualityPolicy(prisma: PrismaClient): Promise<void> {
+  await prisma.qualityPolicy.upsert({
+    where: { version: 1 },
+    update: { isActive: true },
+    create: {
+      version: 1,
+      name: 'Default marketplace quality policy',
+      rules: {
+        failOn: ['CRITICAL', 'HIGH'],
+        reviewOn: ['MEDIUM'],
+        failCategories: [],
+        reviewCategories: ['secret', 'malware'],
+      },
+      isActive: true,
     },
   });
 }

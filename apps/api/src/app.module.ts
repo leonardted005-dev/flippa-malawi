@@ -16,6 +16,7 @@ import { DiscoveryModule } from './modules/discovery/discovery.module';
 import { IdentityModule } from './modules/identity/identity.module';
 import { ListingsModule } from './modules/listings/listings.module';
 import { OffersModule } from './modules/offers/offers.module';
+import { QualityModule } from './modules/quality/quality.module';
 import { SellersModule } from './modules/sellers/sellers.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { WatchlistsModule } from './modules/watchlists/watchlists.module';
@@ -40,6 +41,7 @@ import { WatchlistsModule } from './modules/watchlists/watchlists.module';
     OffersModule,
     WatchlistsModule,
     UploadsModule,
+    QualityModule,
     AdminModule,
   ],
   providers: [

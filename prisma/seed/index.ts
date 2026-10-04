@@ -213,6 +213,27 @@ async function main(): Promise<void> {
   console.log(
     `[seed] upserted ${rootCategories.length + childCategories.length} categories (roots + children).`,
   );
+
+  // Active quality policy (Phase 7): thresholds are DATA, not code.
+  const policyRules = {
+    failOn: ['CRITICAL', 'HIGH'],
+    reviewOn: ['MEDIUM'],
+    failCategories: [],
+    reviewCategories: ['secret', 'malware'],
+  };
+
+  await prisma.qualityPolicy.upsert({
+    where: { version: 1 },
+    update: { rules: policyRules, isActive: true },
+    create: {
+      version: 1,
+      name: 'Default marketplace quality policy',
+      rules: policyRules,
+      isActive: true,
+    },
+  });
+
+  console.log('[seed] upserted quality policy v1 (active).');
 }
 
 main()

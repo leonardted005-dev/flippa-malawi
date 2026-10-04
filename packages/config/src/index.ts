@@ -35,6 +35,9 @@ export const envSchema = z.object({
   STORAGE_SIGNED_URL_TTL: z.coerce.number().int().positive().default(900),
 
   PAYMENTS_DEFAULT_PROVIDER: z.string().default('dpo'),
+
+  /// Absolute path to the Gitleaks binary (Phase 7). Empty = scanner disabled.
+  SCANNERS_GITLEAKS_BIN: z.string().optional(),
   DPO_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
   // DPO-specific credentials remain optional until the official merchant
   // integration specification is provided (audit rule #18 — do not invent fields).

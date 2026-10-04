@@ -493,6 +493,122 @@ model ListingAttachment {
 }
 
 // ---------------------------------------------------------------------------
+// QUALITY CONTROL (Phase 7)
+// ---------------------------------------------------------------------------
+
+enum QualityDecision {
+  PASS
+  REVIEW
+  FAIL
+}
+
+enum ScannerRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum FindingSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+/// Versioned configuration. Thresholds are DATA, not code constants.
+model QualityPolicy {
+  id            String   @id @default(uuid()) @db.Uuid
+  version       Int      @unique
+  name          String
+  rules         Json
+  isActive      Boolean  @default(false) @map("is_active")
+  effectiveFrom DateTime @default(now()) @map("effective_from")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  reports QualityReport[]
+
+  @@index([isActive])
+  @@map("quality_policies")
+}
+
+/// One executed scan. The RAW tool output is retained in object storage with
+/// a sha256 for auditability (rule #15) — never re-derived, never deleted.
+model ScannerRun {
+  id             String           @id @default(uuid()) @db.Uuid
+  assetId        String           @map("asset_id") @db.Uuid
+  scanner        String
+  scannerKind    String           @map("scanner_kind")
+  scannerVersion String?          @map("scanner_version")
+  status         ScannerRunStatus @default(COMPLETED)
+  /// Storage keys of the scanned objects (bounded at scan time).
+  targetObjectIds Json?
+  /// Object-storage key of the raw tool output.
+  rawResultObject String?         @map("raw_result_object")
+  rawSha256       String?          @map("raw_sha256")
+  error           String?
+  exitCode        Int?             @map("exit_code")
+  durationMs      Int?             @map("duration_ms")
+  findingsCount   Int              @default(0) @map("findings_count")
+  submittedAt     DateTime         @default(now()) @map("submitted_at")
+  completedAt     DateTime?        @map("completed_at")
+
+  findings SecurityFinding[]
+  asset    DigitalAsset      @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId, submittedAt])
+  @@map("scanner_runs")
+}
+
+model SecurityFinding {
+  id             String         @id @default(uuid()) @db.Uuid
+  scannerRunId   String         @map("scanner_run_id") @db.Uuid
+  scanner        String
+  ruleId         String         @map("rule_id")
+  severity       FindingSeverity
+  category       String
+  filePath       String?        @map("file_path")
+  line           Int?
+  title          String
+  description    String
+  /// ALREADY REDACTED before persistence — secrets never land in the DB.
+  evidence       String?
+  remediation    String?
+  fingerprint    String
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  run ScannerRun @relation(fields: [scannerRunId], references: [id], onDelete: Cascade)
+
+  @@unique([scannerRunId, fingerprint])
+  @@index([severity])
+  @@index([fingerprint])
+  @@map("security_findings")
+}
+
+model QualityReport {
+  id              String           @id @default(uuid()) @db.Uuid
+  assetId         String           @map("asset_id") @db.Uuid
+  policyId        String           @map("policy_id") @db.Uuid
+  policyVersion   Int              @map("policy_version")
+  decision        QualityDecision
+  passCount       Int              @default(0) @map("pass_count")
+  reviewCount     Int              @default(0) @map("review_count")
+  failCount       Int              @default(0) @map("fail_count")
+  totalFindings   Int              @default(0) @map("total_findings")
+  highestSeverity FindingSeverity? @map("highest_severity")
+  scannerRunIds   Json             @default("[]") @map("scanner_run_ids")
+  computedAt      DateTime         @default(now()) @map("computed_at")
+
+  asset  DigitalAsset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  policy QualityPolicy @relation(fields: [policyId], references: [id])
+
+  @@index([assetId, computedAt])
+  @@map("quality_reports")
+}
+
+// ---------------------------------------------------------------------------
 // CATALOG (digital asset abstraction)
 // ---------------------------------------------------------------------------
 
@@ -579,6 +695,8 @@ model DigitalAsset {
   game      GameAccountMetadata?
   domain    DomainMetadata?
   watchlistItems WatchlistItem[]
+  scannerRuns    ScannerRun[]
+  qualityReports QualityReport[]
 
   @@index([sellerId])
   @@index([type, status])
