@@ -23,6 +23,8 @@ import {
   type DecideVerificationCaseDto,
 } from '../verification/verification.dto';
 import { VerificationService } from '../verification/verification.service';
+import { refundPaymentIntentSchema, type RefundPaymentIntentDto } from '../payments/payments.dto';
+import { PaymentsService } from '../payments/payments.service';
 import { AdminService } from './admin.service';
 
 const verificationQueueSchema = z.object({
@@ -39,6 +41,7 @@ export class AdminController {
     private readonly sellers: SellersService,
     private readonly listings: ListingsService,
     private readonly verification: VerificationService,
+    private readonly payments: PaymentsService,
   ) {}
 
   @Get('audit-logs')
@@ -126,5 +129,24 @@ export class AdminController {
     @Req() req: Request,
   ) {
     return this.verification.revoke(user.id, id, dto.note, deriveRequestMeta(req));
+  }
+
+  /** Payment monitoring: latest intents first (no secrets in the view). */
+  @Get('payments/intents')
+  paymentIntents(@Query('limit') limit?: string, @Query('cursor') cursor?: string) {
+    const parsed = Number(limit ?? '50');
+    const safeLimit = Number.isFinite(parsed) ? Math.min(Math.max(Math.trunc(parsed), 1), 100) : 50;
+    return this.payments.listRecent('', safeLimit, cursor);
+  }
+
+  /** Admin refund: provider moves the money; status comes from our accounting. */
+  @Patch('payments/intents/:id/refund')
+  refundPaymentIntent(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @ZodBody(refundPaymentIntentSchema) dto: RefundPaymentIntentDto,
+    @Req() req: Request,
+  ) {
+    return this.payments.refund(user.id, id, dto.amountMinor, deriveRequestMeta(req));
   }
 }

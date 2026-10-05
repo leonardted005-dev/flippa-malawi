@@ -12,6 +12,7 @@ import { ListingsService } from './listings.service';
   imports: [SellersModule, CatalogModule, UploadsModule, AuctionsModule],
   controllers: [ListingsController],
   providers: [ListingsService, ListingRepository],
-  exports: [ListingsService],
+  // ListingRepository is shared with the payments orchestrator (server-side price reads).
+  exports: [ListingsService, ListingRepository],
 })
 export class ListingsModule {}

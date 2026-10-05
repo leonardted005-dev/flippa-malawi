@@ -6,11 +6,15 @@ import type { AppEnv } from '@fa/config';
 
 import { AppModule } from './app.module';
 import { APP_ENV } from './common/config/config.module';
+import { attachRawBodyParser } from './common/http/raw-body';
 import { JsonLogger } from './common/observability/json-logger.service';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(new JsonLogger());
+  // Runs before Nest's own body parser so webhook handlers can verify
+  // provider signatures over the RAW request body (PAYMENT_ARCHITECTURE §5).
+  attachRawBodyParser(app);
 
   const env = app.get<AppEnv>(APP_ENV);
 

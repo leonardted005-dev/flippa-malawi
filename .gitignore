@@ -20,6 +20,8 @@ prisma/*.db-journal
 .env
 .env.*
 !.env.example
+# Test fixtures only (fake credentials) — required by CI e2e runs.
+!apps/api/test/.env.test
 
 # logs
 *.log

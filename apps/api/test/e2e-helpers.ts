@@ -4,6 +4,7 @@ import { PrismaClient, type AssetType } from '@prisma/client';
 import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
+import { attachRawBodyParser } from '../src/common/http/raw-body';
 import { DNS_EVIDENCE_READER, HTTP_EVIDENCE_READER } from '../src/common/tokens';
 import { StubEvidenceReaders } from '../src/integrations/evidence/stub-evidence-readers';
 
@@ -14,6 +15,8 @@ import { StubEvidenceReaders } from '../src/integrations/evidence/stub-evidence-
 export const e2eTables = [
   'idempotency_keys',
   'audit_logs',
+  'payment_events',
+  'payment_intents',
   'kyc_answers',
   'ownership_challenges',
   'verification_cases',
@@ -87,6 +90,8 @@ export async function bootE2EApp(options: BootE2EOptions = {}): Promise<{
   }
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication();
+  // Same raw-body capture as production main.ts — webhook signature tests.
+  attachRawBodyParser(app);
   app.setGlobalPrefix('api/v1');
   await app.init();
 

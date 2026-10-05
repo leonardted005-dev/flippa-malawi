@@ -76,6 +76,7 @@ model User {
   bids              Bid[]
   offers            Offer[]
   watchlists        Watchlist[]
+  paymentIntents    PaymentIntent[] @relation("IntentBuyer")
 
   @@index([status])
   @@map("users")
@@ -426,6 +427,7 @@ model Listing {
   attachments ListingAttachment[]
   auction     Auction?
   offers      Offer[]
+  intents     PaymentIntent[] @relation("IntentListing")
 
   @@index([sellerId])
   @@index([assetId])
@@ -728,6 +730,85 @@ model KycAnswer {
 
   @@index([caseId])
   @@map("kyc_answers")
+}
+
+// ---------------------------------------------------------------------------
+// PAYMENTS (Phase 9)
+//
+// PaymentIntent is provider-agnostic: amounts/currency come from server state
+// (listing price), never from the client. PaymentEvent is the idempotent
+// webhook journal — UQ(provider, eventId) makes replays safe (rule #12).
+// `orderId`/`escrowId` links arrive with orders/escrow (Phase 10/11).
+// ---------------------------------------------------------------------------
+
+enum PaymentStatus {
+  INITIATED
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  DECLINED
+  FAILED
+  EXPIRED
+  VOIDED
+}
+
+enum PaymentEventStatus {
+  RECEIVED
+  PROCESSED
+  DUPLICATE
+  IGNORED
+}
+
+model PaymentIntent {
+  id             String        @id @default(uuid()) @db.Uuid
+  /// Provider-agnostic code ('dpo', 'fake'). Provider names never leak logic.
+  provider       String
+  /// The provider's own payment reference (token/token-id), set after create.
+  providerRef    String?       @map("provider_ref")
+  buyerId        String        @map("buyer_id") @db.Uuid
+  listingId      String        @map("listing_id") @db.Uuid
+  /// Server-computed from the listing at creation; immutable afterwards.
+  amountMinor    BigInt        @map("amount_minor")
+  currency       String        @db.Char(3)
+  refundedMinor  BigInt        @default(0) @map("refunded_minor")
+  /// Opaque provider checkout handoff (PaymentSession URL/token), if any.
+  checkoutUrl    String?       @map("checkout_url")
+  status         PaymentStatus @default(INITIATED)
+  version        Int           @default(0)
+  expiresAt      DateTime?     @map("expires_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  buyer   User    @relation("IntentBuyer", fields: [buyerId], references: [id], onDelete: Restrict)
+  listing Listing @relation("IntentListing", fields: [listingId], references: [id], onDelete: Restrict)
+  events  PaymentEvent[]
+
+  @@index([buyerId, createdAt])
+  @@index([listingId, status])
+  @@index([provider, providerRef])
+  @@map("payment_intents")
+}
+
+model PaymentEvent {
+  id           String             @id @default(uuid()) @db.Uuid
+  provider     String
+  /// Provider-unique event id — the idempotency key for webhook ingestion.
+  providerEventId String          @map("provider_event_id")
+  intentId     String?            @map("intent_id") @db.Uuid
+  /// Raw verified payload (amounts/status strings) — contains no secrets.
+  payload      Json
+  status       PaymentEventStatus @default(RECEIVED)
+  receivedAt   DateTime           @default(now()) @map("received_at")
+  processedAt  DateTime?          @map("processed_at")
+
+  intent PaymentIntent? @relation(fields: [intentId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, providerEventId])
+  @@index([intentId])
+  @@index([receivedAt])
+  @@map("payment_events")
 }
 
 enum AssetType {
